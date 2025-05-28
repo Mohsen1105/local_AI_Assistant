@@ -1,29 +1,100 @@
 # This is the main application file for the FastAPI LLM server.
 
-from fastapi import FastAPI, HTTPException, Body, File, UploadFile
+from fastapi import FastAPI, HTTPException, Body, File, UploadFile, Security, status
+from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
 from ctransformers import AutoModelForCausalLM
 from contextlib import asynccontextmanager
 import os
 import shutil
+from typing import Dict, List, Optional # Added Optional for clarity, though not strictly needed by the code here
+
 from . import document_processor # Assuming document_processor.py is in the same 'app' directory
 
 import chromadb
 from chromadb.utils import embedding_functions
 
-# --- Configuration ---
-# The path to the GGUF model file.
-# This can be overridden by setting the MODEL_PATH environment variable.
-DEFAULT_MODEL_NAME = "mistral-7b-instruct-v0.1.Q4_K_M.gguf"
-MODEL_DIR = "./models"
-MODEL_PATH = os.environ.get("MODEL_PATH", os.path.join(MODEL_DIR, DEFAULT_MODEL_NAME))
-MODEL_REPO_ID = "TheBloke/Mistral-7B-Instruct-v0.1-GGUF" # For reference
 
+# --- Authentication & Authorization Configuration ---
+API_KEYS_ROLES: Dict[str, List[str]] = {
+    "supersecretadminapikey": ["admin", "query_user", "ingestion_user", "correspondence_user"], # Admin has all roles
+    "user123queryapikey": ["query_user"],
+    "datauploader456apikey": ["ingestion_user"],
+    "consultant789apikey": ["query_user", "correspondence_user"] 
+}
+
+# Define roles
+ROLE_ADMIN = "admin"
+ROLE_QUERY_USER = "query_user"
+ROLE_INGESTION_USER = "ingestion_user"
+ROLE_CORRESPONDENCE_USER = "correspondence_user"
+
+API_KEY_NAME = "X-API-KEY"
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False) # auto_error=False to handle custom exception
+
+async def get_api_key_roles(key: str = Security(api_key_header)) -> List[str]:
+    if not key: # Check if key is None or empty, which happens if header is missing
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API Key header missing",
+        )
+    if key in API_KEYS_ROLES:
+        print(f"API Key validated. Roles: {API_KEYS_ROLES[key]}")
+        return API_KEYS_ROLES[key]
+    else:
+        print(f"Invalid API Key received: {key}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing API Key",
+        )
+
+# --- Role Specific Dependencies ---
+def create_role_dependency(role_name: str):
+    async def role_checker(roles: List[str] = Security(get_api_key_roles)):
+        if role_name not in roles:
+            print(f"Access denied for role '{role_name}'. User roles: {roles}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"User does not have the required '{role_name}' role"
+            )
+        print(f"Access granted for role '{role_name}'. User roles: {roles}")
+        return roles # Or just True, or the specific role
+    return role_checker
+
+# Create dependencies for each role
+require_admin = create_role_dependency(ROLE_ADMIN)
+require_query = create_role_dependency(ROLE_QUERY_USER)
+require_ingestion = create_role_dependency(ROLE_INGESTION_USER)
+require_correspondence = create_role_dependency(ROLE_CORRESPONDENCE_USER)
+
+# --- Main Application Configuration & Lifespan ---
+
+# --- LLM Configuration ---
+# Model filename (e.g., "mistral-7b-instruct-v0.1.Q4_K_M.gguf")
+# This file is expected to be in the ./models directory
+DEFAULT_MODEL_FILENAME = "mistral-7b-instruct-v0.1.Q4_K_M.gguf" # A sensible default
+ACTIVE_LLM_MODEL_FILENAME = os.environ.get("ACTIVE_LLM_MODEL_FILENAME", DEFAULT_MODEL_FILENAME)
+
+# Model type (e.g., "mistral", "llama", "phi"). 
+# ctransformers often infers this, but it can be specified if needed.
+ACTIVE_LLM_MODEL_TYPE = os.environ.get("ACTIVE_LLM_MODEL_TYPE", None) 
+
+MODELS_DIR = "./models" # Directory where models are stored
+MODEL_PATH_CONFIG = os.path.join(MODELS_DIR, ACTIVE_LLM_MODEL_FILENAME)
+MODEL_REPO_ID_INFO = "TheBloke/Mistral-7B-Instruct-v0.1-GGUF (example)" # For user info
+
+print(f"INFO: Attempting to use model: {MODEL_PATH_CONFIG}")
+if ACTIVE_LLM_MODEL_TYPE:
+    print(f"INFO: Using specified model type: {ACTIVE_LLM_MODEL_TYPE}")
+else:
+    print("INFO: Model type not specified, ctransformers will attempt auto-detection if/when loaded.")
+
+
+# --- General App Configuration ---
 UPLOAD_DIR = "./uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-# Ensure chroma_db directory also exists (document_processor.py also does this, but good for explicitness)
 CHROMA_DB_PATH = "./chroma_db" # Used by document_processor and now query
-os.makedirs(CHROMA_DB_PATH, exist_ok=True) 
+os.makedirs(CHROMA_DB_PATH, exist_ok=True)
 
 
 llm = None # Global LLM instance, to be populated by lifespan manager
@@ -62,55 +133,77 @@ except Exception as e:
     # query_collection will remain None. The endpoint should check for this.
 
 # --- Lifespan Management (Model Loading and Unloading) ---
+# --- Placeholder LLM Classes (can be moved to a separate file if they grow) ---
+class DummyLLM:
+    def __init__(self, model_path="N/A"):
+        self.model_path = model_path
+        print(f"DummyLLM initialized. (Intended model: {self.model_path})")
+
+    def __call__(self, prompt, **kwargs):
+        # Adjusted to be slightly more context-aware for different tasks
+        if "summarize" in prompt.lower():
+            text_to_summarize_marker = "Text to summarize:"
+            text_start_index = prompt.find(text_to_summarize_marker)
+            if text_start_index != -1:
+                actual_text_start = text_start_index + len(text_to_summarize_marker)
+                text_snippet = prompt[actual_text_start:].strip()[:70] # Get first 70 chars of actual text
+                return f"Simulated summary of text starting with: '{text_snippet}...' (max_length hint: {kwargs.get('max_summary_length', 'N/A')}, model: {self.model_path})"
+            return f"Simulated summary of: '{prompt[:100]}...' (model: {self.model_path})"
+        # Fallback for other prompts (like RAG or direct generation)
+        return f"Simulated LLM response for prompt starting with: '{prompt[:150]}...' (model: {self.model_path})"
+
+class MissingLLM:
+    def __init__(self, model_path):
+        self.model_path = model_path
+        print(f"MissingLLM initialized. Model not found at: {self.model_path}")
+
+    def __call__(self, prompt, **kwargs):
+        raise RuntimeError(f"Model not loaded. Please ensure '{self.model_path}' exists and is correctly configured.")
+
+class ErrorLLM:
+    def __init__(self, model_path, error_message):
+        self.model_path = model_path
+        self.error_message = error_message
+        print(f"ErrorLLM initialized. Error loading model {self.model_path}: {self.error_message}")
+
+    def __call__(self, prompt, **kwargs):
+        raise RuntimeError(f"Model '{self.model_path}' failed to load due to: {self.error_message}")
+
+# --- Lifespan Management (Model Loading and Unloading) ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global llm
-    print(f"Attempting to load model from: {MODEL_PATH}")
     try:
-        # Ensure the models directory exists (though model download is separate)
-        if not os.path.exists(MODEL_DIR):
-            os.makedirs(MODEL_DIR)
-            print(f"Created directory: {MODEL_DIR}")
-
-        # For now, we'll just simulate loading.
-        # Actual model download and loading will be handled later.
-        # Check if the model file exists before attempting to load
-        if os.path.exists(MODEL_PATH):
-            print(f"Loading LLM model: {MODEL_PATH}")
-            # Uncomment the line below when ready to load the actual model
-            # llm = AutoModelForCausalLM.from_pretrained(MODEL_PATH, model_type="mistral")
-            print("Model loading simulated (actual loading is commented out).")
-            # For now, using a dummy object for llm to allow endpoint to function
-            class DummyLLM:
-                def __call__(self, prompt, **kwargs):
-                    # Adjusted to be slightly more context-aware for different tasks
-                    if "summarize" in prompt.lower():
-                        text_to_summarize_marker = "Text to summarize:"
-                        text_start_index = prompt.find(text_to_summarize_marker)
-                        if text_start_index != -1:
-                            actual_text_start = text_start_index + len(text_to_summarize_marker)
-                            text_snippet = prompt[actual_text_start:].strip()[:70] # Get first 70 chars of actual text
-                            return f"Simulated summary of text starting with: '{text_snippet}...' (max_length hint: {kwargs.get('max_summary_length', 'N/A')})"
-                        return f"Simulated summary of: '{prompt[:100]}...'"
-                    # Fallback for other prompts (like RAG or direct generation)
-                    return f"Simulated LLM response for prompt starting with: '{prompt[:150]}...'"
-            llm = DummyLLM()
+        print(f"Lifespan: Attempting to load model from: {MODEL_PATH_CONFIG}")
+        if not os.path.exists(MODELS_DIR):
+            os.makedirs(MODELS_DIR)
+            print(f"Lifespan: '{MODELS_DIR}' directory created.")
+        
+        if not os.path.exists(MODEL_PATH_CONFIG):
+            print(f"Lifespan: Model file not found at {MODEL_PATH_CONFIG}. Please ensure it's downloaded.")
+            llm = MissingLLM(model_path=MODEL_PATH_CONFIG) 
         else:
-            print(f"Model file not found at {MODEL_PATH}. LLM will not be loaded.")
-            print("Please download the model to the specified path.")
-            # llm will remain None, and endpoints should handle this
-            class MissingLLM:
-                 def __call__(self, prompt, **kwargs):
-                    raise RuntimeError(f"Model not loaded. Please ensure '{MODEL_PATH}' exists.")
-            llm = MissingLLM()
+            print("Lifespan: Model file found. Actual ctransformers loading is commented out for now.")
+            # IMPORTANT: The following ctransformers line should be uncommented by the user 
+            # when they have a model and are ready to test actual LLM inference.
+            # from ctransformers import AutoModelForCausalLM # Keep import here for when it's uncommented
+            # llm = AutoModelForCausalLM.from_pretrained(
+            #     MODEL_PATH_CONFIG,
+            #     model_type=ACTIVE_LLM_MODEL_TYPE if ACTIVE_LLM_MODEL_TYPE else None,
+            #     # Add other ctransformers parameters if needed, e.g., gpu_layers=50 for GPU offload
+            #     # Example: context_length=4096
+            # )
+            # print(f"Lifespan: Successfully loaded LLM: {ACTIVE_LLM_MODEL_FILENAME} of type {ACTIVE_LLM_MODEL_TYPE or 'auto-detected'}")
+            
+            # For now, to ensure the app runs without ctransformers fully installed or model downloaded by default:
+            if 'llm' not in globals() or llm is None: # Keep dummy if actual load is commented
+                llm = DummyLLM(model_path=MODEL_PATH_CONFIG) 
+                print(f"Lifespan: Using DummyLLM for {ACTIVE_LLM_MODEL_FILENAME}.")
 
     except Exception as e:
-        print(f"Error loading language model: {e}")
-        # llm will remain None or be the MissingLLM, endpoints should handle this
-        class ErrorLLM:
-            def __call__(self, prompt, **kwargs):
-                raise RuntimeError(f"Model failed to load due to: {e}")
-        llm = ErrorLLM()
+        error_msg = str(e)
+        print(f"Lifespan: Error loading LLM model {ACTIVE_LLM_MODEL_FILENAME}: {error_msg}")
+        llm = ErrorLLM(model_path=MODEL_PATH_CONFIG, error_message=error_msg)
     yield
     # Clean up the ML models and release the resources
     print("Shutting down application and cleaning up resources.")
@@ -154,20 +247,64 @@ async def read_root():
 
 # --- Pydantic Models for API Requests ---
 class QueryRequest(BaseModel):
+    """
+    Request model for querying documents.
+    Requires a query string and an optional number of top matching document chunks to retrieve.
+    """
     query: str
     top_n: int = 3 # Number of relevant chunks to retrieve
 
+    class Config:
+        schema_extra = {
+            "example": {
+                "query": "What were the main operational issues reported last month?",
+                "top_n": 5,
+            }
+        }
+
 class SummarizeRequest(BaseModel):
+    """
+    Request model for text summarization.
+    Requires the text to be summarized and an optional maximum length for the summary.
+    """
     text: str
     max_summary_length: int = 150 # Optional: hint for summary length
 
+    class Config:
+        schema_extra = {
+            "example": {
+                "text": "The quick brown fox jumps over the lazy dog. This sentence is often used to demonstrate all letters of the alphabet. It is a classic pangram. The purpose of this example is to provide a long enough text that might warrant summarization into a shorter form, perhaps focusing on the key subject, which is the pangram itself and its usage.",
+                "max_summary_length": 50,
+            }
+        }
+
 class FreeFormPromptRequest(BaseModel):
+    """
+    Request model for free-form interaction with the LLM.
+    Requires a prompt string.
+    """
     prompt: str
     # max_tokens: int = 500 # Example if we want to control LLM output length later
 
+    class Config:
+        schema_extra = {
+            "example": {
+                "prompt": "Explain the concept of a Large Language Model in simple terms.",
+            }
+        }
+
 # --- Query Endpoint ---
-@app.post("/query-documents/")
+@app.post("/query-documents/", 
+            summary="Query internal documents (RAG)",
+            dependencies=[Security(require_query)])
 async def query_documents_endpoint(request: QueryRequest): # Renamed to avoid conflict with module
+    """
+    Accepts a user query, retrieves relevant document chunks from the vector store (ChromaDB),
+    constructs a context-augmented prompt, and uses the LLM to generate an answer.
+
+    This endpoint implements the Retrieval Augmented Generation (RAG) pattern.
+    Requires 'query_user' role.
+    """
     global llm # Access the global llm instance (populated by lifespan)
     global query_collection # Access the global query_collection instance
 
@@ -245,8 +382,16 @@ Answer:"""
         raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
 
 # --- Summarization Endpoint ---
-@app.post("/summarize-text/")
+@app.post("/summarize-text/", 
+            summary="Summarize provided text",
+            dependencies=[Security(require_query)]) # Protected with query role
 async def summarize_text_endpoint(request: SummarizeRequest):
+    """
+    Accepts a block of text and generates a concise summary using the LLM.
+    The desired maximum length of the summary can be specified.
+
+    Requires 'query_user' role (as it uses LLM resources, similar to querying).
+    """
     global llm # Access the global llm instance
 
     if not request.text:
@@ -291,8 +436,17 @@ Summary:"""
         raise HTTPException(status_code=500, detail=f"Error processing summarization request: {str(e)}")
 
 # --- Free-form Prompt / Consultation Endpoint ---
-@app.post("/generate-response/")
+@app.post("/generate-response/", 
+            summary="Generate response from free-form prompt (Consultation)",
+            dependencies=[Security(require_correspondence)])
 async def generate_response_endpoint(request: FreeFormPromptRequest):
+    """
+    Accepts a free-form prompt from the user and returns a direct response from the LLM.
+    This endpoint is suitable for general consultation, correspondence generation,
+    or any task that doesn't require specific document retrieval (RAG).
+
+    Requires 'correspondence_user' role.
+    """
     global llm # Access the global llm instance
 
     if not request.prompt:
@@ -331,8 +485,18 @@ async def generate_response_endpoint(request: FreeFormPromptRequest):
         raise HTTPException(status_code=500, detail=f"Error processing free-form request: {str(e)}")
 
 
-@app.post("/upload-document/")
+@app.post("/upload-document/", 
+            summary="Upload document for ingestion",
+            dependencies=[Security(require_ingestion)])
 async def upload_document(file: UploadFile = File(...)):
+    """
+    Uploads a document (PDF, DOCX, TXT) to the server.
+    The server then processes the document, extracts text, chunks it,
+    generates embeddings, and ingests them into the vector database (ChromaDB)
+    for later retrieval.
+
+    Requires 'ingestion_user' role.
+    """
     temp_file_path = os.path.join(UPLOAD_DIR, file.filename)
     try:
         print(f"Attempting to save uploaded file to: {temp_file_path}")
