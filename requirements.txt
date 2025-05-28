@@ -1,0 +1,15 @@
+# This file is used to specify Python dependencies for the project.
+# You can add any libraries your application needs here.
+requests
+fastapi
+uvicorn[standard]
+ctransformers
+chromadb
+sentence-transformers
+PyPDF2
+python-docx
+langchain
+pandas
+openpyxl
+pyodbc
+cx_Oracle
