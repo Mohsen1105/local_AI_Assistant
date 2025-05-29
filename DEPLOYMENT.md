@@ -101,14 +101,51 @@ You will need to include your API key in the `X-API-KEY` header for protected en
 
 ## 7. Database Connectivity (SQL Server / Oracle)
 
-The application includes Python functions in `app/data_connectors.py` to connect to SQL Server and Oracle databases. However, using these functions requires:
-1.  **Database Drivers**: The necessary ODBC drivers (for SQL Server) or Oracle Instant Client libraries must be installed *within the Docker container*. This requires modifying the `Dockerfile` to include the installation steps for these system-level dependencies, which can be complex and specific to your OS/environment.
-2.  **Python Packages**: `pyodbc` and `cx_Oracle` are listed in `requirements.txt`. They might require compilation against the installed drivers/client libraries.
-3.  **Connection Details**: You'll need to provide valid connection strings/credentials when calling the respective functions (currently not exposed via API endpoints directly for querying, but can be used internally or via new endpoints if developed).
+The application includes Python functions in `app/data_connectors.py` to connect to SQL Server and Oracle databases. However, these are **optional features** and the necessary Python packages (`pyodbc`, `cx_Oracle`) and system-level database drivers are **not installed by default** with the main `requirements.txt` or in the base Docker image.
 
-**This is an advanced setup step. The base Dockerfile does not include these database drivers.**
+The functions in `app/data_connectors.py` will print a warning if the required Python libraries are not found and will raise a `RuntimeError` if you attempt to use the database connectivity functions without them.
+
+### Installing Optional Database Drivers (Advanced)
+
+If you require connectivity to SQL Server or Oracle databases, you will need to take additional steps, as the necessary Python packages and system-level drivers are **not included** in the default Docker build to keep the image lightweight and avoid build issues for users who don't need these databases.
+
+1.  **Install Python Packages**:
+    The Python packages `pyodbc` (for SQL Server) and `cx_Oracle` (for Oracle) are listed in `requirements-db.txt`. To install them into your environment (ideally a virtual environment if working locally, or when customizing the Dockerfile):
+    ```bash
+    pip install -r requirements-db.txt
+    ```
+
+2.  **Install System-Level Drivers (Crucial for Docker):**
+    -   **For SQL Server (`pyodbc`):** You need to install ODBC drivers within your Docker image. This typically involves adding commands to your `Dockerfile` like:
+        ```dockerfile
+        # Example for Debian/Ubuntu-based images - may need adjustments
+        # RUN apt-get update && apt-get install -y gnupg unixodbc-dev
+        # RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
+        # RUN curl https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list
+        # RUN apt-get update && ACCEPT_EULA=Y apt-get install -y msodbcsql17 mssql-tools
+        ```
+        Consult Microsoft's documentation for the latest ODBC driver installation instructions for your chosen base Linux distribution.
+    -   **For Oracle (`cx_Oracle`):** You need to install Oracle Instant Client libraries within your Docker image. This involves downloading the Instant Client zip files from Oracle's website and setting environment variables like `LD_LIBRARY_PATH`. Example Dockerfile additions:
+        ```dockerfile
+        # Example - paths and versions will vary
+        # ARG ORACLE_INSTANT_CLIENT_VERSION=19.10
+        # ADD https://download.oracle.com/otn_software/linux/instantclient/${ORACLE_INSTANT_CLIENT_VERSION}/instantclient-basic-${ORACLE_INSTANT_CLIENT_VERSION}.0.0.0dbru.zip /tmp/
+        # ADD https://download.oracle.com/otn_software/linux/instantclient/${ORACLE_INSTANT_CLIENT_VERSION}/instantclient-sdk-${ORACLE_INSTANT_CLIENT_VERSION}.0.0.0dbru.zip /tmp/
+        # RUN unzip /tmp/instantclient-basic-*.zip -d /opt/oracle && \
+        #     unzip /tmp/instantclient-sdk-*.zip -d /opt/oracle && \
+        #     rm -rf /tmp/*.zip
+        # ENV LD_LIBRARY_PATH=/opt/oracle/instantclient_19_10:$LD_LIBRARY_PATH 
+        # (Adjust version number in LD_LIBRARY_PATH)
+        ```
+        This requires accepting Oracle's license terms and potentially creating an Oracle account to download the client.
+
+3.  **Rebuild Docker Image:**
+    After modifying your `Dockerfile` (e.g., adding the system driver installations and potentially a `COPY requirements-db.txt /app/` and `RUN pip install -r requirements-db.txt` line), you would need to rebuild your custom Docker image.
+
+**The base `Dockerfile` provided with this project does not include these steps to avoid complexity and large image sizes for users who do not need these specific database connections.** The functions in `app/data_connectors.py` will raise a `RuntimeError` if these optional dependencies are not installed.
 
 ## 8. Stopping the Application
 - To stop the running Docker container, find its ID using `docker ps` and then run `docker stop <container_id>`.
+```
 
 ```

@@ -1,8 +1,18 @@
 # app/data_connectors.py
 import pandas as pd
 from typing import List, Dict, Any
-import pyodbc # For SQL Server
-import cx_Oracle # For Oracle
+
+try:
+    import pyodbc
+except ImportError:
+    pyodbc = None
+    print("Warning: pyodbc library not found. SQL Server connectivity will be unavailable. Install with: pip install -r requirements-db.txt")
+
+try:
+    import cx_Oracle
+except ImportError:
+    cx_Oracle = None
+    print("Warning: cx_Oracle library not found. Oracle DB connectivity will be unavailable. Install with: pip install -r requirements-db.txt")
 
 # --- XLS/XLSX Processing ---
 def extract_data_from_xls(file_path: str) -> Dict[str, pd.DataFrame]:
@@ -38,6 +48,10 @@ def query_sql_server(connection_string: str, query: str) -> pd.DataFrame:
     Example connection_string: 
     'DRIVER={ODBC Driver 17 for SQL Server};SERVER=your_server;DATABASE=your_db;UID=your_user;PWD=your_password'
     """
+    if pyodbc is None:
+        error_message = "pyodbc is not installed. SQL Server functionality is unavailable. Please install dependencies from requirements-db.txt and ensure ODBC drivers are configured."
+        print(f"Error: {error_message}")
+        raise RuntimeError(error_message)
     try:
         conn = pyodbc.connect(connection_string)
         df = pd.read_sql(query, conn)
@@ -55,6 +69,10 @@ def query_oracle_db(dsn: str, user: str, password: str, query: str) -> pd.DataFr
     Example dsn (Data Source Name): 'your_host:your_port/your_service_name'
     Ensure Oracle client libraries (like Oracle Instant Client) are set up in the environment.
     """
+    if cx_Oracle is None:
+        error_message = "cx_Oracle is not installed. Oracle DB functionality is unavailable. Please install dependencies from requirements-db.txt and ensure Oracle Client libraries are configured."
+        print(f"Error: {error_message}")
+        raise RuntimeError(error_message)
     try:
         # For cx_Oracle.makedsn is often preferred for constructing the DSN string
         # Or use a full connection string if preferred by your setup
@@ -81,6 +99,9 @@ def query_oracle_db(dsn: str, user: str, password: str, query: str) -> pd.DataFr
         # For cx_Oracle, often good to print e.args for more detailed error info from Oracle
         if hasattr(e, 'args') and e.args:
             oracle_error = e.args[0]
+            # Check if oracle_error is an instance of cx_Oracle.Error or similar, if cx_Oracle is available
+            # For now, we'll keep the hasattr check as it's safer if cx_Oracle might be None
+            # though the function should have exited if cx_Oracle was None.
             if hasattr(oracle_error, 'code') and hasattr(oracle_error, 'message'):
                  print(f"Oracle Error Code: {oracle_error.code}")
                  print(f"Oracle Error Message: {oracle_error.message}")

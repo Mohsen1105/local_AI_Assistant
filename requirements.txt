@@ -11,5 +11,3 @@ python-docx
 langchain
 pandas
 openpyxl
-pyodbc
-cx_Oracle
