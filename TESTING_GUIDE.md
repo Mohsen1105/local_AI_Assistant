@@ -10,6 +10,7 @@ This guide provides a set of test cases and areas for refinement to ensure the A
 -   You have API keys for different roles (as defined in `API_KEYS_ROLES` in `app/app.py`).
 -   You have sample PDF, DOCX, and TXT files for testing ingestion and querying.
 -   You have a tool for making API requests (e.g., `curl`, Postman, or custom scripts). The API docs are available at `http://localhost:8000/docs`.
+-   **For Database Connector Testing**: If you plan to test SQL Server or Oracle connectivity, you must have installed the optional Python packages (`pip install -r requirements-db.txt`) and configured your environment (or Docker image) with the necessary system-level database drivers as detailed in `DEPLOYMENT.MD`. The base application does not include these by default.
 
 ## 2. Test Cases
 
