@@ -255,7 +255,7 @@ class QueryRequest(BaseModel):
     top_n: int = 3 # Number of relevant chunks to retrieve
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "query": "What were the main operational issues reported last month?",
                 "top_n": 5,
@@ -271,7 +271,7 @@ class SummarizeRequest(BaseModel):
     max_summary_length: int = 150 # Optional: hint for summary length
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "text": "The quick brown fox jumps over the lazy dog. This sentence is often used to demonstrate all letters of the alphabet. It is a classic pangram. The purpose of this example is to provide a long enough text that might warrant summarization into a shorter form, perhaps focusing on the key subject, which is the pangram itself and its usage.",
                 "max_summary_length": 50,
@@ -287,7 +287,7 @@ class FreeFormPromptRequest(BaseModel):
     # max_tokens: int = 500 # Example if we want to control LLM output length later
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "prompt": "Explain the concept of a Large Language Model in simple terms.",
             }
