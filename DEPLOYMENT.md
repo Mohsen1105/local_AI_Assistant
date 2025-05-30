@@ -1,6 +1,7 @@
 # AI Assistant Deployment Guide
 
 This guide provides instructions on how to build and run the AI Assistant application using Docker.
+The application includes a FastAPI backend for core AI functionalities and a Streamlit web UI for user interaction.
 
 ## Prerequisites
 
@@ -71,7 +72,7 @@ The application is initially configured to use a placeholder LLM to ensure it ca
   #     MODEL_PATH_CONFIG,
   #     model_type=ACTIVE_LLM_MODEL_TYPE if ACTIVE_LLM_MODEL_TYPE else None,
   #     # For GPU offload (example: 50 layers), uncomment and adjust if you have CUDA:
-  #     # gpu_layers=50 
+  #     # gpu_layers=50
   # )
   # print(f"Lifespan: Successfully loaded LLM: {ACTIVE_LLM_MODEL_FILENAME}")
   ```
@@ -100,7 +101,7 @@ docker build --build-arg HOST_SENTENCE_TRANSFORMER_MODEL_PATH="./local_sentence_
 ## 5. Run the Docker Container
 
 ```bash
-docker run -p 8000:8000 \
+docker run -p 8000:8000 -p 8501:8501 \
     -v ./models:/app/models \
     -v ./chroma_db:/app/chroma_db \
     -v ./uploads:/app/uploads \
@@ -111,6 +112,7 @@ docker run -p 8000:8000 \
     ai-assistant-app
 ```
 - Replace `"your_model_filename.gguf"` with the actual filename of your chosen GGUF LLM if it's different from the default.
+- This Docker container uses `supervisor` to manage both the FastAPI backend (on port 8000) and the Streamlit UI (on port 8501).
 - **Volumes**:
   - `./models:/app/models`: Mounts your local GGUF LLM models directory into the container.
   - `./chroma_db:/app/chroma_db`: Persists the Chroma vector database on your host machine.
@@ -124,13 +126,20 @@ docker run -p 8000:8000 \
   - Add the `--gpus all` flag to the `docker run` command.
   - You might also need to install `ctransformers` with CUDA support. The current `requirements.txt` installs the CPU version. To build with GPU support, you might need to modify `requirements.txt` to `ctransformers[cuda]>=0.2.27` (or a specific version) and potentially adjust the Dockerfile if system CUDA libraries are needed. *This is an advanced step.*
 
-## 6. Accessing the API
+## 6. Accessing the Application
 
-- **API Endpoints**: Available at `http://localhost:8000`.
-- **Swagger UI (Interactive Docs)**: `http://localhost:8000/docs`
-- **ReDoc (Alternative Docs)**: `http://localhost:8000/redoc`
+Once the Docker container is running:
 
-You will need to include your API key in the `X-API-KEY` header for protected endpoints.
+-   **Streamlit Web UI**:
+    -   Accessible at: `http://localhost:8501`
+    -   Use this web interface to chat with the AI assistant, query documents, and request summaries.
+    -   You will need to enter your API Key in the "API Key Configuration" section of the Streamlit UI to authenticate your requests.
+
+-   **FastAPI Backend API Endpoints**:
+    -   Available at `http://localhost:8000`.
+    -   Swagger UI (Interactive Docs): `http://localhost:8000/docs`
+    -   ReDoc (Alternative Docs): `http://localhost:8000/redoc`
+    -   You will need to include your API key in the `X-API-KEY` header for protected endpoints if accessing the API directly.
 
 ## 7. Database Connectivity (SQL Server / Oracle)
 
@@ -167,7 +176,7 @@ If you require connectivity to SQL Server or Oracle databases, you will need to 
         # RUN unzip /tmp/instantclient-basic-*.zip -d /opt/oracle && \
         #     unzip /tmp/instantclient-sdk-*.zip -d /opt/oracle && \
         #     rm -rf /tmp/*.zip
-        # ENV LD_LIBRARY_PATH=/opt/oracle/instantclient_19_10:$LD_LIBRARY_PATH 
+        # ENV LD_LIBRARY_PATH=/opt/oracle/instantclient_19_10:$LD_LIBRARY_PATH
         # (Adjust version number in LD_LIBRARY_PATH)
         ```
         This requires accepting Oracle's license terms and potentially creating an Oracle account to download the client.
