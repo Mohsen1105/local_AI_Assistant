@@ -131,7 +131,7 @@ def process_document(file_path: str, file_name: str):
     # Generate IDs and metadatas for ChromaDB
     ids = [f"{file_name}_chunk_{i}" for i, _ in enumerate(chunks)]
     metadatas = [{"source": file_name, "chunk_index": i, "original_filename": file_name} for i, _ in enumerate(chunks)]
-    
+
     # Check for duplicates before adding
     try:
         existing_ids_response = collection.get(ids=ids) # Only get relevant IDs
@@ -139,8 +139,8 @@ def process_document(file_path: str, file_name: str):
     except Exception as e:
         print(f"Error checking existing IDs in ChromaDB: {e}")
         # Depending on desired behavior, may return or try to proceed
-        return 
-        
+        return
+
     new_chunks = []
     new_ids = []
     new_metadatas = []
@@ -150,7 +150,7 @@ def process_document(file_path: str, file_name: str):
             new_chunks.append(chunks[i])
             new_ids.append(ids[i])
             new_metadatas.append(metadatas[i])
-    
+
     if not new_chunks:
         print(f"All {len(chunks)} chunks from {file_name} already exist in the database.")
         return

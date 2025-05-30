@@ -1,6 +1,12 @@
 # Use an official Python runtime as a parent image
 FROM python:3.10-slim
 
+# Install supervisor and create log directory
+RUN apt-get update && \
+    apt-get install -y supervisor && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /var/log/supervisor
+
 # Set the working directory in the container
 WORKDIR /app
 
@@ -15,9 +21,6 @@ RUN mkdir -p /app/models /app/uploads /app/chroma_db /app/sentence_transformer_m
 
 # Copy the pre-downloaded sentence transformer model into the image
 # Ensure HOST_SENTENCE_TRANSFORMER_MODEL_PATH is set during docker build via --build-arg
-# If HOST_SENTENCE_TRANSFORMER_MODEL_PATH is not set or points to a non-existent/empty directory,
-# this COPY command might behave unexpectedly or copy nothing, so it's crucial the user provides a valid path.
-# The trailing slash on the destination ensures the contents of the source directory are copied into the target directory.
 COPY ${HOST_SENTENCE_TRANSFORMER_MODEL_PATH} /app/sentence_transformer_models/all-MiniLM-L6-v2/
 
 # Copy the requirements file into the container at /app
@@ -27,23 +30,28 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application directory (app folder) into the container at /app/app
-# This assumes your 'app' directory with app.py, document_processor.py, etc. is in the same directory as this Dockerfile
 COPY ./app /app/app
 
-# Make port 8000 available to the world outside this container
-EXPOSE 8000
+# Copy the Streamlit app file into the container at /app
+COPY streamlit_app.py /app/streamlit_app.py
 
-# Define the command to run the application using Uvicorn
-# This tells Docker how to run your FastAPI application
-# It assumes your FastAPI 'app' instance is in /app/app/app.py (app.app:app)
-CMD ["uvicorn", "app.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Copy the supervisord configuration file
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Make ports available to the world outside this container
+EXPOSE 8000 # For FastAPI
+EXPOSE 8501 # For Streamlit
+
+# Define the command to run supervisord
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
 
 # Optional: Add a non-root user (good practice)
 # RUN useradd --create-home appuser
 # USER appuser
-# Note: If using a non-root user, ensure file permissions are correctly set 
+# Note: If using a non-root user, ensure file permissions are correctly set
 # for directories like /app/models, /app/uploads, /app/chroma_db and the sentence_transformer_models
 # if they need to be writable by the app (though sentence transformer models are usually read-only at runtime).
+# Also ensure the supervisor log directory is writable by this user, or configure supervisor to log elsewhere.
 # For simplicity in this exercise, we'll continue as root (default).
 # The CMD would remain the same as it's executed by the current user.
 # The WORKDIR /app also applies to the user.

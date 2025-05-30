@@ -45,7 +45,7 @@ def dataframe_to_text(df: pd.DataFrame, sheet_name: str) -> str:
 def query_sql_server(connection_string: str, query: str) -> pd.DataFrame:
     """
     Connects to SQL Server, executes a query, and returns results as a DataFrame.
-    Example connection_string: 
+    Example connection_string:
     'DRIVER={ODBC Driver 17 for SQL Server};SERVER=your_server;DATABASE=your_db;UID=your_user;PWD=your_password'
     """
     if pyodbc is None:
@@ -77,11 +77,11 @@ def query_oracle_db(dsn: str, user: str, password: str, query: str) -> pd.DataFr
         # For cx_Oracle.makedsn is often preferred for constructing the DSN string
         # Or use a full connection string if preferred by your setup
         # conn = cx_Oracle.connect(user, password, dsn)
-        
+
         # Simpler connection if Oracle Instant Client is configured with tnsnames.ora or Easy Connect string
         full_connection_string = f"{user}/{password}@{dsn}"
         conn = cx_Oracle.connect(full_connection_string)
-        
+
         cursor = conn.cursor()
         cursor.execute(query)
         # Fetch column names from cursor.description
@@ -89,7 +89,7 @@ def query_oracle_db(dsn: str, user: str, password: str, query: str) -> pd.DataFr
         # Fetch all rows
         rows = cursor.fetchall()
         df = pd.DataFrame(rows, columns=columns)
-        
+
         cursor.close()
         conn.close()
         print(f"Successfully executed Oracle DB query. Fetched {len(df)} rows.")

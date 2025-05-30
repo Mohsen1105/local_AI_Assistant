@@ -20,7 +20,7 @@ API_KEYS_ROLES: Dict[str, List[str]] = {
     "supersecretadminapikey": ["admin", "query_user", "ingestion_user", "correspondence_user"], # Admin has all roles
     "user123queryapikey": ["query_user"],
     "datauploader456apikey": ["ingestion_user"],
-    "consultant789apikey": ["query_user", "correspondence_user"] 
+    "consultant789apikey": ["query_user", "correspondence_user"]
 }
 
 # Define roles
@@ -75,9 +75,9 @@ require_correspondence = create_role_dependency(ROLE_CORRESPONDENCE_USER)
 DEFAULT_MODEL_FILENAME = "mistral-7b-instruct-v0.1.Q4_K_M.gguf" # A sensible default
 ACTIVE_LLM_MODEL_FILENAME = os.environ.get("ACTIVE_LLM_MODEL_FILENAME", DEFAULT_MODEL_FILENAME)
 
-# Model type (e.g., "mistral", "llama", "phi"). 
+# Model type (e.g., "mistral", "llama", "phi").
 # ctransformers often infers this, but it can be specified if needed.
-ACTIVE_LLM_MODEL_TYPE = os.environ.get("ACTIVE_LLM_MODEL_TYPE", None) 
+ACTIVE_LLM_MODEL_TYPE = os.environ.get("ACTIVE_LLM_MODEL_TYPE", None)
 
 MODELS_DIR = "./models" # Directory where models are stored
 MODEL_PATH_CONFIG = os.path.join(MODELS_DIR, ACTIVE_LLM_MODEL_FILENAME)
@@ -107,7 +107,7 @@ COLLECTION_NAME_QUERY = "internal_documents" # Same collection as ingestion
 # Path for the Sentence Transformer model files within the container
 DEFAULT_SENTENCE_TRANSFORMER_PATH_QUERY = "/app/sentence_transformer_models/all-MiniLM-L6-v2"
 # Reuse the same environment variable as in document_processor.py for consistency
-ENV_SENTENCE_TRANSFORMER_MODEL_PATH_QUERY = os.environ.get("ENV_SENTENCE_TRANSFORMER_MODEL_PATH", DEFAULT_SENTENCE_TRANSFORMER_PATH_QUERY) 
+ENV_SENTENCE_TRANSFORMER_MODEL_PATH_QUERY = os.environ.get("ENV_SENTENCE_TRANSFORMER_MODEL_PATH", DEFAULT_SENTENCE_TRANSFORMER_PATH_QUERY)
 print(f"Query Endpoint: Using Sentence Transformer model path: {ENV_SENTENCE_TRANSFORMER_MODEL_PATH_QUERY}")
 
 query_client = None
@@ -118,7 +118,7 @@ try:
     # Initialize client
     print(f"Initializing ChromaDB client for querying at path: {CHROMA_DB_PATH_QUERY}")
     query_client = chromadb.PersistentClient(path=CHROMA_DB_PATH_QUERY)
-    
+
     # Initialize embedding function
     try:
         query_sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
@@ -134,7 +134,7 @@ try:
     if query_sentence_transformer_ef is None:
         # This means the embedding function failed to initialize.
         raise RuntimeError("SentenceTransformerEmbeddingFunction for querying could not be initialized.")
-        
+
     print(f"Attempting to get ChromaDB collection: '{COLLECTION_NAME_QUERY}' for querying.")
     query_collection = query_client.get_collection(
         name=COLLECTION_NAME_QUERY,
@@ -194,13 +194,13 @@ async def lifespan(app: FastAPI):
         if not os.path.exists(MODELS_DIR):
             os.makedirs(MODELS_DIR)
             print(f"Lifespan: '{MODELS_DIR}' directory created.")
-        
+
         if not os.path.exists(MODEL_PATH_CONFIG):
             print(f"Lifespan: Model file not found at {MODEL_PATH_CONFIG}. Please ensure it's downloaded.")
-            llm = MissingLLM(model_path=MODEL_PATH_CONFIG) 
+            llm = MissingLLM(model_path=MODEL_PATH_CONFIG)
         else:
             print("Lifespan: Model file found. Actual ctransformers loading is commented out for now.")
-            # IMPORTANT: The following ctransformers line should be uncommented by the user 
+            # IMPORTANT: The following ctransformers line should be uncommented by the user
             # when they have a model and are ready to test actual LLM inference.
             # from ctransformers import AutoModelForCausalLM # Keep import here for when it's uncommented
             # llm = AutoModelForCausalLM.from_pretrained(
@@ -210,10 +210,10 @@ async def lifespan(app: FastAPI):
             #     # Example: context_length=4096
             # )
             # print(f"Lifespan: Successfully loaded LLM: {ACTIVE_LLM_MODEL_FILENAME} of type {ACTIVE_LLM_MODEL_TYPE or 'auto-detected'}")
-            
+
             # For now, to ensure the app runs without ctransformers fully installed or model downloaded by default:
             if 'llm' not in globals() or llm is None: # Keep dummy if actual load is commented
-                llm = DummyLLM(model_path=MODEL_PATH_CONFIG) 
+                llm = DummyLLM(model_path=MODEL_PATH_CONFIG)
                 print(f"Lifespan: Using DummyLLM for {ACTIVE_LLM_MODEL_FILENAME}.")
 
     except Exception as e:
@@ -238,7 +238,7 @@ async def generate_text(payload: dict = Body(...)):
     global llm
     if llm is None:
         raise HTTPException(status_code=503, detail="Language model not loaded. Please check server logs.")
-    
+
     prompt = payload.get("prompt")
     if not prompt:
         raise HTTPException(status_code=400, detail="Missing 'prompt' in request payload.")
@@ -247,7 +247,7 @@ async def generate_text(payload: dict = Body(...)):
         print(f"Received prompt: {prompt}")
         # Note: Actual generation parameters (max_tokens, temperature, etc.) can be added here.
         # For ctransformers, the __call__ method of the model object performs generation.
-        generated_text = llm(prompt, max_new_tokens=150, temperature=0.7) 
+        generated_text = llm(prompt, max_new_tokens=150, temperature=0.7)
         print(f"Generated text: {generated_text}")
         return {"generated_text": generated_text}
     except RuntimeError as e: # Catch errors from our dummy/missing LLM handlers
@@ -310,7 +310,7 @@ class FreeFormPromptRequest(BaseModel):
         }
 
 # --- Query Endpoint ---
-@app.post("/query-documents/", 
+@app.post("/query-documents/",
             summary="Query internal documents (RAG)",
             dependencies=[Security(require_query)])
 async def query_documents_endpoint(request: QueryRequest): # Renamed to avoid conflict with module
@@ -342,7 +342,7 @@ async def query_documents_endpoint(request: QueryRequest): # Renamed to avoid co
             n_results=request.top_n,
             include=['documents', 'metadatas'] # Ensure these are included
         )
-        
+
         retrieved_documents = results.get('documents', [[]])[0] # Safely get documents, default to empty list
         retrieved_metadatas = results.get('metadatas', [[]])[0] # Safely get metadatas
 
@@ -361,7 +361,7 @@ Context:
 
 Query: {request.query}
 Answer:"""
-        
+
         print(f"Constructed LLM prompt (first 300 chars): {llm_prompt[:300]}...")
 
         # Call the LLM (DummyLLM or actual model via global llm instance)
@@ -369,7 +369,7 @@ Answer:"""
             try:
                 # The DummyLLM __call__ takes prompt and **kwargs, so this is fine.
                 # Actual ctransformer model also has a __call__ method.
-                generated_text = llm(llm_prompt) 
+                generated_text = llm(llm_prompt)
             except RuntimeError as e: # Catch errors from our dummy/missing/error LLM handlers
                 print(f"Runtime error from LLM during query: {e}")
                 raise HTTPException(status_code=500, detail=f"LLM runtime error: {str(e)}")
@@ -398,7 +398,7 @@ Answer:"""
         raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
 
 # --- Summarization Endpoint ---
-@app.post("/summarize-text/", 
+@app.post("/summarize-text/",
             summary="Summarize provided text",
             dependencies=[Security(require_query)]) # Protected with query role
 async def summarize_text_endpoint(request: SummarizeRequest):
@@ -428,13 +428,13 @@ Text to summarize:
 {request.text}
 
 Summary:"""
-        
+
         print(f"Constructed summarization prompt (first 200 chars): {llm_prompt[:200]}...")
 
         # Call the LLM (DummyLLM or actual model)
         # The DummyLLM __call__ can take **kwargs, so we pass max_summary_length for it to use.
-        generated_summary = llm(llm_prompt, max_summary_length=request.max_summary_length) 
-        
+        generated_summary = llm(llm_prompt, max_summary_length=request.max_summary_length)
+
         print(f"Generated summary (simulated): {generated_summary}")
 
         return {
@@ -452,7 +452,7 @@ Summary:"""
         raise HTTPException(status_code=500, detail=f"Error processing summarization request: {str(e)}")
 
 # --- Free-form Prompt / Consultation Endpoint ---
-@app.post("/generate-response/", 
+@app.post("/generate-response/",
             summary="Generate response from free-form prompt (Consultation)",
             dependencies=[Security(require_correspondence)])
 async def generate_response_endpoint(request: FreeFormPromptRequest):
@@ -478,12 +478,12 @@ async def generate_response_endpoint(request: FreeFormPromptRequest):
         # Using the user's prompt directly for now.
         # Could add framing here if needed, e.g., for specific consultation types.
         llm_api_prompt = request.prompt
-        
+
         # The DummyLLM will provide a generic simulated response.
         # If specific parameters like max_tokens were defined in FreeFormPromptRequest,
         # they could be passed here, e.g., llm(llm_api_prompt, max_tokens=request.max_tokens)
-        generated_text = llm(llm_api_prompt) 
-        
+        generated_text = llm(llm_api_prompt)
+
         print(f"Generated response (simulated): {generated_text}")
 
         return {
@@ -501,7 +501,7 @@ async def generate_response_endpoint(request: FreeFormPromptRequest):
         raise HTTPException(status_code=500, detail=f"Error processing free-form request: {str(e)}")
 
 
-@app.post("/upload-document/", 
+@app.post("/upload-document/",
             summary="Upload document for ingestion",
             dependencies=[Security(require_ingestion)])
 async def upload_document(file: UploadFile = File(...)):
@@ -519,12 +519,12 @@ async def upload_document(file: UploadFile = File(...)):
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         print(f"File '{file.filename}' saved successfully to {temp_file_path}")
-        
+
         # Call the document processor
         print(f"Calling document_processor for {file.filename}")
         document_processor.process_document(temp_file_path, file.filename)
         print(f"Document processing finished for {file.filename}")
-        
+
         return {"message": f"Document '{file.filename}' processed and ingested successfully."}
     except HTTPException as he: # Re-raise HTTPExceptions directly
         raise he

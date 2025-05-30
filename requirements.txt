@@ -3,6 +3,7 @@
 requests
 fastapi
 python-multipart
+streamlit
 uvicorn[standard]
 ctransformers
 chromadb
