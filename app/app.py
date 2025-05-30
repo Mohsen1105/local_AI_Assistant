@@ -101,25 +101,41 @@ llm = None # Global LLM instance, to be populated by lifespan manager
 
 # --- ChromaDB Access for Querying (Initialized once on startup) ---
 CHROMA_DB_PATH_QUERY = CHROMA_DB_PATH # Same path as ingestion
-EMBEDDING_MODEL_NAME_QUERY = "all-MiniLM-L6-v2" # Same model as ingestion
+# EMBEDDING_MODEL_NAME_QUERY = "all-MiniLM-L6-v2" # Will be replaced by path
 COLLECTION_NAME_QUERY = "internal_documents" # Same collection as ingestion
+
+# Path for the Sentence Transformer model files within the container
+DEFAULT_SENTENCE_TRANSFORMER_PATH_QUERY = "/app/sentence_transformer_models/all-MiniLM-L6-v2"
+# Reuse the same environment variable as in document_processor.py for consistency
+ENV_SENTENCE_TRANSFORMER_MODEL_PATH_QUERY = os.environ.get("ENV_SENTENCE_TRANSFORMER_MODEL_PATH", DEFAULT_SENTENCE_TRANSFORMER_PATH_QUERY) 
+print(f"Query Endpoint: Using Sentence Transformer model path: {ENV_SENTENCE_TRANSFORMER_MODEL_PATH_QUERY}")
 
 query_client = None
 query_sentence_transformer_ef = None
 query_collection = None
 
 try:
-    # Initialize client and embedding function
+    # Initialize client
     print(f"Initializing ChromaDB client for querying at path: {CHROMA_DB_PATH_QUERY}")
     query_client = chromadb.PersistentClient(path=CHROMA_DB_PATH_QUERY)
     
-    print(f"Initializing SentenceTransformerEmbeddingFunction with model: {EMBEDDING_MODEL_NAME_QUERY}")
-    query_sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name=EMBEDDING_MODEL_NAME_QUERY
-    )
-    
+    # Initialize embedding function
+    try:
+        query_sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=ENV_SENTENCE_TRANSFORMER_MODEL_PATH_QUERY # Points to local path
+        )
+        print(f"Query Endpoint: Successfully initialized SentenceTransformerEmbeddingFunction from {ENV_SENTENCE_TRANSFORMER_MODEL_PATH_QUERY}")
+    except Exception as e_ef:
+        print(f"Query Endpoint: Error initializing SentenceTransformerEmbeddingFunction from {ENV_SENTENCE_TRANSFORMER_MODEL_PATH_QUERY}: {e_ef}")
+        query_sentence_transformer_ef = None # Fallback
+        # raise RuntimeError(f"Failed to initialize sentence transformer for querying from {ENV_SENTENCE_TRANSFORMER_MODEL_PATH_QUERY}: {e_ef}")
+
     # Get the existing collection
-    print(f"Attempting to get ChromaDB collection: '{COLLECTION_NAME_QUERY}'")
+    if query_sentence_transformer_ef is None:
+        # This means the embedding function failed to initialize.
+        raise RuntimeError("SentenceTransformerEmbeddingFunction for querying could not be initialized.")
+        
+    print(f"Attempting to get ChromaDB collection: '{COLLECTION_NAME_QUERY}' for querying.")
     query_collection = query_client.get_collection(
         name=COLLECTION_NAME_QUERY,
         embedding_function=query_sentence_transformer_ef # Crucial: pass the embedding function
@@ -127,10 +143,10 @@ try:
     print(f"Successfully connected to ChromaDB collection '{COLLECTION_NAME_QUERY}' for querying.")
 except Exception as e:
     # Detailed error logging is important here
-    print(f"CRITICAL ERROR: Failed to connect to or get ChromaDB collection '{COLLECTION_NAME_QUERY}' for querying.")
-    print(f"Error details: {e}")
-    print("The '/query-documents/' endpoint will not function correctly.")
-    # query_collection will remain None. The endpoint should check for this.
+    print(f"CRITICAL ERROR: Failed to connect to ChromaDB or initialize embedding function for querying: {e}")
+    # print(f"Error details: {e}") # This is redundant if the error message itself is printed above
+    print("The '/query-documents/' endpoint will not function correctly if collection is None.")
+    query_collection = None # Ensure it's None on any error in this block
 
 # --- Lifespan Management (Model Loading and Unloading) ---
 # --- Placeholder LLM Classes (can be moved to a separate file if they grow) ---
