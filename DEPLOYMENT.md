@@ -20,8 +20,10 @@ This guide provides instructions on how to build and run the AI Assistant applic
 
 ## 2. Initial Setup
 
-### a. Download an LLM Model
-The application requires a GGUF-format Large Language Model.
+### a. Download Required Models
+
+#### i. Download GGUF LLM Model (for main text generation)
+The application requires a GGUF-format Large Language Model for its primary text generation capabilities.
 - Create a directory named `models` in the root of the project:
   ```bash
   mkdir models
@@ -31,8 +33,34 @@ The application requires a GGUF-format Large Language Model.
   - Download a GGUF file, e.g., `mistral-7b-instruct-v0.1.Q4_K_M.gguf`.
   - Place it in `./models/mistral-7b-instruct-v0.1.Q4_K_M.gguf`.
 
-### b. (Important) Uncomment LLM Loading Code
-The application is initially configured to use a placeholder LLM to ensure it can start without a model. To use a real LLM:
+#### ii. Download Sentence Transformer Model (Mandatory for Airgapped/Self-Contained Build)
+
+The application uses the `sentence-transformers/all-MiniLM-L6-v2` model for generating embeddings for document retrieval. To build a self-contained Docker image that includes this model (recommended for airgapped environments or simplified deployment):
+
+1.  **Download the model files:**
+    You need to download the complete model repository. The easiest way is often to use `git clone` if you have Git LFS installed, or download the files manually from the Hugging Face Hub:
+    - Go to [sentence-transformers/all-MiniLM-L6-v2 on Hugging Face](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2).
+    - Click on the "Files and versions" tab.
+    - Download all files and place them into a local directory. For example, create `local_sentence_transformer_models/all-MiniLM-L6-v2` in your project root and place all model files (config.json, pytorch_model.bin, vocab.txt, special_tokens_map.json, etc.) directly in that folder. *Ensure the path corresponds to what you will pass during the Docker build.*
+
+2.  **Structure:**
+    Example local structure:
+    ```
+    your_project_root/
+    ├── local_sentence_transformer_models/
+    │   └── all-MiniLM-L6-v2/    <-- Place all model files directly here
+    │       ├── config.json
+    │       ├── pytorch_model.bin
+    │       ├── tokenizer_config.json
+    │       └── ... (all other files from the HF repo)
+    ├── app/
+    ├── models/ (for GGUF LLMs)
+    ├── Dockerfile
+    └── ...
+    ```
+
+### c. (Important) Uncomment LLM Loading Code
+The application is initially configured to use a placeholder LLM to ensure it can start without a model. To use a real LLM for text generation:
 - Open `app/app.py`.
 - Find the `lifespan` function.
 - **Comment out** the line that initializes the `DummyLLM` or `MissingLLM` (e.g., `llm = DummyLLM(...)` or `llm = MissingLLM(...)`).
@@ -61,10 +89,13 @@ You can switch the LLM model by setting environment variables when running the D
 
 ## 4. Build the Docker Image
 
-From the root of the project directory, run:
+To build the Docker image, which now includes the Sentence Transformer model, run the following command from the root of the project directory. You **must** provide the path to your locally downloaded Sentence Transformer model files using the `HOST_SENTENCE_TRANSFORMER_MODEL_PATH` build argument.
+
 ```bash
-docker build -t ai-assistant-app .
+docker build --build-arg HOST_SENTENCE_TRANSFORMER_MODEL_PATH="./local_sentence_transformer_models/all-MiniLM-L6-v2" -t ai-assistant-app .
 ```
+- Replace `./local_sentence_transformer_models/all-MiniLM-L6-v2` with the actual path to your downloaded `all-MiniLM-L6-v2` model files if you stored them elsewhere.
+- If you used a different directory name than `all-MiniLM-L6-v2` inside your host path, ensure the `COPY` command in the `Dockerfile` and the default path in the application code (`ENV_SENTENCE_TRANSFORMER_MODEL_PATH`) are consistent, or use the environment variable to point to the correct internal path. The default internal path is `/app/sentence_transformer_models/all-MiniLM-L6-v2`.
 
 ## 5. Run the Docker Container
 
@@ -75,17 +106,19 @@ docker run -p 8000:8000 \
     -v ./uploads:/app/uploads \
     -e ACTIVE_LLM_MODEL_FILENAME="your_model_filename.gguf" \
     # Optional: -e ACTIVE_LLM_MODEL_TYPE="mistral" \
+    # Optional: -e ENV_SENTENCE_TRANSFORMER_MODEL_PATH="/app/custom_st_model_path" \
     # Optional for NVIDIA GPU: --gpus all \
     ai-assistant-app
 ```
-- Replace `"your_model_filename.gguf"` with the actual filename of your chosen model if it's different from the default.
+- Replace `"your_model_filename.gguf"` with the actual filename of your chosen GGUF LLM if it's different from the default.
 - **Volumes**:
-  - `./models:/app/models`: Mounts your local models directory into the container.
+  - `./models:/app/models`: Mounts your local GGUF LLM models directory into the container.
   - `./chroma_db:/app/chroma_db`: Persists the Chroma vector database on your host machine.
-  - `./uploads:/app/uploads`: Persists uploaded files temporarily (less critical if files are processed and then potentially removed or archived by a different process).
+  - `./uploads:/app/uploads`: Persists uploaded files temporarily.
 - **Environment Variables (`-e`)**:
-  - Use `-e ACTIVE_LLM_MODEL_FILENAME="your_model.gguf"` to specify a different model.
-  - Use `-e ACTIVE_LLM_MODEL_TYPE="model_type"` if you need to specify the model type for `ctransformers`.
+  - `ACTIVE_LLM_MODEL_FILENAME`: Name of the GGUF file in the `./models` directory (for the main LLM).
+  - `ACTIVE_LLM_MODEL_TYPE`: (Optional) The model type for the main GGUF LLM.
+  - `ENV_SENTENCE_TRANSFORMER_MODEL_PATH`: (Optional) Path inside the container where the Sentence Transformer model is located. The default is `/app/sentence_transformer_models/all-MiniLM-L6-v2`, which is where the Dockerfile copies the model. You generally do not need to set this unless you customize the Dockerfile's internal paths.
 - **GPU Acceleration**:
   - If you have an NVIDIA GPU and want to use it, you need `nvidia-docker2` (NVIDIA Container Toolkit) installed.
   - Add the `--gpus all` flag to the `docker run` command.

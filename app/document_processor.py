@@ -9,8 +9,13 @@ from docx import Document
 
 # --- Configuration ---
 CHROMA_DB_PATH = "./chroma_db"
-EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+# EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2" # Will be replaced by path
 COLLECTION_NAME = "internal_documents"
+
+# Path for the Sentence Transformer model files within the container
+DEFAULT_SENTENCE_TRANSFORMER_PATH = "/app/sentence_transformer_models/all-MiniLM-L6-v2"
+ENV_SENTENCE_TRANSFORMER_MODEL_PATH = os.environ.get("ENV_SENTENCE_TRANSFORMER_MODEL_PATH", DEFAULT_SENTENCE_TRANSFORMER_PATH)
+print(f"Document Processor: Using Sentence Transformer model path: {ENV_SENTENCE_TRANSFORMER_MODEL_PATH}")
 
 # --- Manual Text Chunker (Option 2 - if not using Langchain) ---
 def chunk_text(text: str, chunk_size: int = 1000, chunk_overlap: int = 200) -> List[str]:
@@ -34,27 +39,37 @@ os.makedirs(CHROMA_DB_PATH, exist_ok=True)
 client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
 
 # Using sentence-transformers for embeddings
+sentence_transformer_ef = None # Initialize to None
 try:
     sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name=EMBEDDING_MODEL_NAME
+        model_name=ENV_SENTENCE_TRANSFORMER_MODEL_PATH # Now points to the local path
     )
+    print(f"Document Processor: Successfully initialized SentenceTransformerEmbeddingFunction from {ENV_SENTENCE_TRANSFORMER_MODEL_PATH}")
 except Exception as e:
-    print(f"Error initializing SentenceTransformerEmbeddingFunction: {e}")
-    print("Please ensure 'sentence-transformers' is installed and the model name is correct.")
-    # Fallback to a default embedding function if SentenceTransformer fails (optional)
-    # sentence_transformer_ef = embedding_functions.DefaultEmbeddingFunction() 
-    raise e # Or re-raise the exception to halt if embedding is critical
+    # This error will likely occur if the path is wrong or model files are corrupted/missing at runtime
+    print(f"Document Processor: Error initializing SentenceTransformerEmbeddingFunction from {ENV_SENTENCE_TRANSFORMER_MODEL_PATH}: {e}")
+    # Depending on how critical this is at startup, you might re-raise or exit
+    # For now, let it proceed, but ChromaDB collection creation might fail or use a default if this fails
+    # sentence_transformer_ef = None # Already None, explicitly for clarity if needed
+    # raise RuntimeError(f"Failed to initialize sentence transformer from {ENV_SENTENCE_TRANSFORMER_MODEL_PATH}: {e}")
+
 
 # Get or create the collection
 # Make sure to use the embedding function during collection creation/retrieval
+if sentence_transformer_ef is None:
+    # This should ideally not happen if DEPLOYMENT.MD is followed to ensure model files are present.
+    # If it does, the application won't be able to create embeddings.
+    raise RuntimeError("SentenceTransformerEmbeddingFunction could not be initialized. Cannot proceed with ChromaDB setup.")
+
 try:
     collection = client.get_or_create_collection(
         name=COLLECTION_NAME,
-        embedding_function=sentence_transformer_ef, # Pass the embedding function instance
+        embedding_function=sentence_transformer_ef # Pass the embedding function instance
         # metadata={"hnsw:space": "cosine"} # Optional: specify distance metric if needed
     )
 except Exception as e:
     print(f"Error getting or creating ChromaDB collection '{COLLECTION_NAME}': {e}")
+    # This is critical, so re-raise
     raise e
 
 # --- Document Processing Functions ---
