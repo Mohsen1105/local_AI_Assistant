@@ -9,7 +9,7 @@ import os
 import shutil
 from typing import Dict, List, Optional # Added Optional for clarity, though not strictly needed by the code here
 
-from . import document_processor # Assuming document_processor.py is in the same 'app' directory
+import document_processor # Assuming document_processor.py is in the same 'app' directory
 
 import chromadb
 from chromadb.utils import embedding_functions
